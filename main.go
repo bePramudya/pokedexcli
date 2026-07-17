@@ -13,38 +13,40 @@ import (
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 
-	for i := 0; i < 1; i = 0 {
+	commands := commands()
+
+	for {
 		fmt.Print("Pokedex > ")
 
-		scanner.Scan()
+		if !scanner.Scan() {
+			break
+		}
 
 		input := scanner.Text()
-		if len(input) == 0 {
+		if input == "" {
 			continue
 		}
 
-		inputs := strings.Fields(input)
-
-		firstInput := inputs[0]
-		secondInput := ""
-		if len(inputs) > 1 {
-			secondInput = inputs[1:][0]
+		words := strings.Fields(input)
+		cmdName := words[0]
+		arg := ""
+		if len(words) > 1 {
+			arg = words[1]
 		}
 
-		command, exist := commands()[firstInput]
-		if !exist {
+		cmd, ok := commands[cmdName]
+		if !ok {
 			fmt.Print("Unknown command \n")
 			continue
 		}
 
-		err := command.callback(&config, secondInput)
-		if err != nil {
+		if err := cmd.callback(&config, arg); err != nil {
 			fmt.Println(err)
 		}
+	}
 
-		if err := scanner.Err(); err != nil {
-			fmt.Printf("Invalid input: %s \n", err)
-		}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Invalid input: %s \n", err)
 	}
 }
 
@@ -146,11 +148,11 @@ func commandExplore(c *Config, val string) error {
 		return err
 	}
 
-	fmt.Print("Exploring ", locationDetail.Name, "... \n")
-	fmt.Print("Found Pokemon: \n")
+	fmt.Printf("Exploring %s...\n", locationDetail.Name)
+	fmt.Print("Found Pokemon:\n")
 
 	for _, encounter := range locationDetail.PokemonEncounters {
-		fmt.Print(encounter.Pokemon.Name, "\n")
+		fmt.Printf(" - %s\n", encounter.Pokemon.Name)
 	}
 
 	return nil
@@ -213,25 +215,25 @@ type RespSearchLocation struct {
 }
 
 type RespLocationDetail struct {
-	EncounterMethodRates []struct {
-		EncounterMethod struct {
-			Name string `json:"name"`
-			URL  string `json:"url"`
-		} `json:"encounter_method"`
-		VersionDetails []struct {
-			Rate    int `json:"rate"`
-			Version struct {
-				Name string `json:"name"`
-				URL  string `json:"url"`
-			} `json:"version"`
-		} `json:"version_details"`
-	} `json:"encounter_method_rates"`
-	GameIndex int `json:"game_index"`
-	ID        int `json:"id"`
-	Location  struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
-	} `json:"location"`
+	// EncounterMethodRates []struct {
+	// 	EncounterMethod struct {
+	// 		Name string `json:"name"`
+	// 		URL  string `json:"url"`
+	// 	} `json:"encounter_method"`
+	// 	VersionDetails []struct {
+	// 		Rate    int `json:"rate"`
+	// 		Version struct {
+	// 			Name string `json:"name"`
+	// 			URL  string `json:"url"`
+	// 		} `json:"version"`
+	// 	} `json:"version_details"`
+	// } `json:"encounter_method_rates"`
+	// GameIndex int `json:"game_index"`
+	// ID        int `json:"id"`
+	// Location  struct {
+	// 	Name string `json:"name"`
+	// 	URL  string `json:"url"`
+	// } `json:"location"`
 	Name  string `json:"name"`
 	Names []struct {
 		Language struct {
