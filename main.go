@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"strings"
@@ -50,13 +51,13 @@ func main() {
 	}
 }
 
-func commandExit(c *Config, val string) error {
+func commandExit(c *Config, arg string) error {
 	fmt.Print("Closing the Pokedex... Goodbye!\n")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(c *Config, val string) error {
+func commandHelp(c *Config, arg string) error {
 	fmt.Print("Welcome to the Pokedex!\n")
 	fmt.Print("Usage:\n\n")
 
@@ -96,7 +97,7 @@ func helperMapsCommands(c *Config, target string) error {
 	return nil
 }
 
-func commandMap(c *Config, val string) error {
+func commandMap(c *Config, arg string) error {
 	if c.Next == "" {
 		return fmt.Errorf("map search reached limit")
 	}
@@ -109,7 +110,7 @@ func commandMap(c *Config, val string) error {
 	return nil
 }
 
-func commandMapBack(c *Config, val string) error {
+func commandMapBack(c *Config, arg string) error {
 	if c.Previous == "" {
 		return fmt.Errorf("There's no previous map search")
 	}
@@ -122,12 +123,12 @@ func commandMapBack(c *Config, val string) error {
 	return nil
 }
 
-func commandExplore(c *Config, val string) error {
-	if val == "" {
-		return fmt.Errorf("No location specified, command: explore <location>")
+func commandExplore(c *Config, arg string) error {
+	if arg == "" {
+		return fmt.Errorf("No location specified, command: explore <location>\n")
 	}
 
-	url := "https://pokeapi.co/api/v2/location-area/" + val
+	url := "https://pokeapi.co/api/v2/location-area/" + arg
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -137,12 +138,12 @@ func commandExplore(c *Config, val string) error {
 
 	body, err := io.ReadAll(res.Body)
 	if res.StatusCode == 404 {
-		return fmt.Errorf("location not found")
+		return fmt.Errorf("location not found\n")
 	} else if res.StatusCode > 299 {
 		return fmt.Errorf("API response failed with status code: %d and \nbody: %s\n", res.StatusCode, body)
 	}
 
-	var locationDetail = RespLocationDetail{}
+	// var locationDetail = RespLocationDetail{}
 	err = json.Unmarshal(body, &locationDetail)
 	if err != nil {
 		return err
@@ -158,10 +159,60 @@ func commandExplore(c *Config, val string) error {
 	return nil
 }
 
+func commandCatch(c *Config, arg string) error {
+	if arg == "" {
+		return fmt.Errorf("what's you want to catch?")
+	}
+
+	// pokemonIsPresent := false
+	// for _, encounter := range locationDetail.PokemonEncounters {
+	// 	fmt.Print(encounter.Pokemon.Name)
+	// 	if encounter.Pokemon.Name == arg {
+	// 		pokemonIsPresent = true
+	// 	}
+	// }
+
+	// if !pokemonIsPresent {
+	// 	return fmt.Errorf("Pokemon specified is not in the area")
+	// }
+
+	url := "https://pokeapi.co/api/v2/pokemon/" + arg
+
+	res, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("Problem fetching pokemon data")
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if res.StatusCode == 404 {
+		return fmt.Errorf("pokemon not found")
+	} else if res.StatusCode > 299 {
+		return fmt.Errorf("API response failed with status code: %d and \nbody: %s", res.StatusCode, body)
+	}
+
+	var pokemon = Pokemon{}
+	if err := json.Unmarshal(body, &pokemon); err != nil {
+		return err
+	}
+
+	fmt.Printf("Throwing a Pokeball at %s...\n", pokemon.Name)
+
+	if rand.IntN(pokemon.BaseExperience) == 0 {
+		fmt.Print(pokemon.Name, " was caught!\n")
+	} else {
+		fmt.Print(pokemon.Name, " escaped!\n")
+		return nil
+	}
+
+	pokedex[pokemon.Name] = pokemon
+	return nil
+}
+
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(c *Config, val string) error
+	callback    func(c *Config, arg string) error
 }
 
 func commands() map[string]cliCommand {
@@ -191,6 +242,11 @@ func commands() map[string]cliCommand {
 			description: "explore a region",
 			callback:    commandExplore,
 		},
+		"catch": {
+			name:        "catch",
+			description: "try to catch a pokemon",
+			callback:    commandCatch,
+		},
 	}
 }
 
@@ -215,25 +271,6 @@ type RespSearchLocation struct {
 }
 
 type RespLocationDetail struct {
-	// EncounterMethodRates []struct {
-	// 	EncounterMethod struct {
-	// 		Name string `json:"name"`
-	// 		URL  string `json:"url"`
-	// 	} `json:"encounter_method"`
-	// 	VersionDetails []struct {
-	// 		Rate    int `json:"rate"`
-	// 		Version struct {
-	// 			Name string `json:"name"`
-	// 			URL  string `json:"url"`
-	// 		} `json:"version"`
-	// 	} `json:"version_details"`
-	// } `json:"encounter_method_rates"`
-	// GameIndex int `json:"game_index"`
-	// ID        int `json:"id"`
-	// Location  struct {
-	// 	Name string `json:"name"`
-	// 	URL  string `json:"url"`
-	// } `json:"location"`
 	Name  string `json:"name"`
 	Names []struct {
 		Language struct {
@@ -265,4 +302,36 @@ type RespLocationDetail struct {
 			} `json:"version"`
 		} `json:"version_details"`
 	} `json:"pokemon_encounters"`
+}
+
+var locationDetail = RespLocationDetail{}
+
+type Pokemon struct {
+	Name   string `json:"name"`
+	Height int    `json:"height"`
+	Weight int    `json:"weight"`
+	Stats  []struct {
+		BaseStat int `json:"base_stat"`
+		Effort   int `json:"effort"`
+		Stat     struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"stat"`
+	} `json:"stats"`
+	Types []struct {
+		Slot int `json:"slot"`
+		Type struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"type"`
+	} `json:"types"`
+	BaseExperience int `json:"base_experience"`
+}
+
+var pokedex = make(map[string]Pokemon)
+
+func cleanInput(text string) []string {
+	output := strings.ToLower(text)
+	words := strings.Fields(output)
+	return words
 }
