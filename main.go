@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/bePramudya/pokedexcli/internal/pokecache"
 )
 
 func main() {
@@ -69,23 +72,32 @@ func commandHelp(c *Config, arg string) error {
 }
 
 func helperMapsCommands(c *Config, target string) error {
-	res, err := http.Get(target)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if res.StatusCode > 299 {
-		fmt.Printf("API response failed with status code: %d and \nbody: %s\n", res.StatusCode, body)
-		return err
-	}
-
 	var areas RespSearchLocation
-	err = json.Unmarshal(body, &areas)
-	if err != nil {
-		fmt.Println(err)
-		return err
+
+	if cached, ok := c.Cache.Get(target); !ok {
+		res, err := http.Get(target)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+
+		body, err := io.ReadAll(res.Body)
+		if res.StatusCode > 299 {
+			fmt.Printf("API response failed with status code: %d and \nbody: %s\n", res.StatusCode, body)
+			return err
+		}
+
+		c.Cache.Add(target, body)
+
+		if err := json.Unmarshal(body, &areas); err != nil {
+			fmt.Println(err)
+			return err
+		}
+	} else {
+		if err := json.Unmarshal(cached, &areas); err != nil {
+			fmt.Println(err)
+			return err
+		}
 	}
 
 	for _, area := range areas.Results {
@@ -130,23 +142,29 @@ func commandExplore(c *Config, arg string) error {
 
 	url := "https://pokeapi.co/api/v2/location-area/" + arg
 
-	res, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
+	if cached, ok := c.Cache.Get(url); !ok {
+		res, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
-	if res.StatusCode == 404 {
-		return fmt.Errorf("location not found\n")
-	} else if res.StatusCode > 299 {
-		return fmt.Errorf("API response failed with status code: %d and \nbody: %s\n", res.StatusCode, body)
-	}
+		body, err := io.ReadAll(res.Body)
+		if res.StatusCode == 404 {
+			return fmt.Errorf("location not found\n")
+		} else if res.StatusCode > 299 {
+			return fmt.Errorf("API response failed with status code: %d and \nbody: %s\n", res.StatusCode, body)
+		}
 
-	// var locationDetail = RespLocationDetail{}
-	err = json.Unmarshal(body, &locationDetail)
-	if err != nil {
-		return err
+		c.Cache.Add(url, body)
+
+		if err := json.Unmarshal(body, &locationDetail); err != nil {
+			return err
+		}
+	} else {
+		if err := json.Unmarshal(cached, &locationDetail); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("Exploring %s...\n", locationDetail.Name)
@@ -177,23 +195,29 @@ func commandCatch(c *Config, arg string) error {
 	// }
 
 	url := "https://pokeapi.co/api/v2/pokemon/" + arg
-
-	res, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("Problem fetching pokemon data")
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if res.StatusCode == 404 {
-		return fmt.Errorf("pokemon not found")
-	} else if res.StatusCode > 299 {
-		return fmt.Errorf("API response failed with status code: %d and \nbody: %s", res.StatusCode, body)
-	}
-
 	var pokemon = Pokemon{}
-	if err := json.Unmarshal(body, &pokemon); err != nil {
-		return err
+
+	if cached, ok := c.Cache.Get(url); !ok {
+		res, err := http.Get(url)
+		if err != nil {
+			return fmt.Errorf("Problem fetching pokemon data")
+		}
+		defer res.Body.Close()
+
+		body, err := io.ReadAll(res.Body)
+		if res.StatusCode == 404 {
+			return fmt.Errorf("pokemon not found")
+		} else if res.StatusCode > 299 {
+			return fmt.Errorf("API response failed with status code: %d and \nbody: %s", res.StatusCode, body)
+		}
+
+		if err := json.Unmarshal(body, &pokemon); err != nil {
+			return err
+		}
+	} else {
+		if err := json.Unmarshal(cached, &pokemon); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("Throwing a Pokeball at %s...\n", pokemon.Name)
@@ -297,11 +321,13 @@ func commands() map[string]cliCommand {
 type Config struct {
 	Next     string
 	Previous string
+	Cache    pokecache.Cache
 }
 
 var config = Config{
 	Next:     "https://pokeapi.co/api/v2/location-area/",
 	Previous: "",
+	Cache:    pokecache.NewCache(5 * time.Minute),
 }
 
 type RespSearchLocation struct {
